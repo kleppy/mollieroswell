@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mollie vs. Roswell: Treat Heist</title>
+
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      body {
+        background: #1a1a2e;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 16px 0 24px;
+        gap: 12px;
+      }
+
+      /* ── Animated title ───────────────────────────────────────── */
+      .game-title {
+        font-family: 'Trebuchet MS', 'Arial Rounded MT Bold', Arial, sans-serif;
+        font-size: clamp(1.6rem, 3.8vw, 2.9rem);
+        font-weight: 900;
+        letter-spacing: 0.06em;
+        text-align: center;
+        padding: 0 24px;
+
+        /* Gradient text (gold → orange → cream → coral → gold) */
+        color: #ffd700;                          /* plain-color fallback */
+        background: linear-gradient(
+          90deg,
+          #ffd700 0%,
+          #ff9f43 25%,
+          #ffe566 50%,
+          #ff6b35 75%,
+          #ffd700 100%
+        );
+        background-size: 250% auto;
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+
+        /* Glow halo + legibility shadow */
+        filter:
+          drop-shadow(0 0 10px rgba(255, 170, 50, 0.75))
+          drop-shadow(0 0 24px rgba(255, 130, 20, 0.45))
+          drop-shadow(0 3px 8px rgba(0, 0, 0, 0.75));
+
+        /* Bob + shimmer run together */
+        animation:
+          titleBob      3.5s ease-in-out infinite,
+          titleShimmer  3s   linear     infinite;
+
+        user-select: none;
+        cursor: default;
+      }
+
+      @keyframes titleBob {
+        0%, 100% { transform: translateY(0px)  rotate(-0.25deg); }
+        40%       { transform: translateY(-7px) rotate( 0.25deg); }
+        70%       { transform: translateY(-3px) rotate(-0.12deg); }
+      }
+
+      @keyframes titleShimmer {
+        0%   { background-position: 250% center; }
+        100% { background-position:   0% center; }
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-wo2H3Y66.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/phaser-Czz4FBZH.js">
+  </head>
+  <body>
+    <h1 class="game-title">Mollie vs Roswell: Treat Heist</h1>
+  </body>
+</html>
