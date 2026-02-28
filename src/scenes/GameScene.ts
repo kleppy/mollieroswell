@@ -30,6 +30,15 @@ export class GameScene extends Phaser.Scene {
   private barkTimer = 0;
   private bgMusic: Phaser.Sound.BaseSound | null = null;
 
+  // ── Mobile virtual joystick ──────────────────────────────────────────────────
+  private joystickVec = { x: 0, y: 0 };
+  private joystickActive = false;
+  private joystickBaseX = 90;
+  private joystickBaseY = 510;
+  private joystickRadius = 56;
+  private joystickThumb: Phaser.GameObjects.Arc | null = null;
+  private poopTap = false;
+
   constructor() {
     super({ key: 'GameScene' });
   }
@@ -52,6 +61,9 @@ export class GameScene extends Phaser.Scene {
 
   init(data: { level?: number }): void {
     this.levelNum = data?.level ?? 1;
+    this.joystickVec = { x: 0, y: 0 };
+    this.joystickActive = false;
+    this.poopTap = false;
   }
 
   create(): void {
@@ -151,6 +163,8 @@ export class GameScene extends Phaser.Scene {
       this.bgMusic = null;
     });
 
+    this.buildJoystick();
+
     console.assert(
       this.treatGroup.getChildren().length === this.cfg.totalTreats,
       `Treat count mismatch: expected ${this.cfg.totalTreats}, got ${this.treatGroup.getChildren().length}`,
@@ -160,7 +174,8 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.isGameOver) return;
 
-    this.player.update();
+    this.player.update(this.joystickVec, this.poopTap);
+    this.poopTap = false;
 
     // Enemies prefer chasing Axol when she is within vision range
     const px = this.player.sprite.x;
@@ -1884,6 +1899,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildDecorativesWaterPark(): void {
+    const isMobile = this.sys.game.device.input.touch;
     // Pool rect: x=100,y=200,w=380,h=260  (furniture depth = 200+130 = 330)
     // Wading pool: x=120,y=700,w=200,h=160  (depth = 780)
     // Slide tower: x=580,y=160,w=120,h=120  (depth = 220)
@@ -1999,8 +2015,8 @@ export class GameScene extends Phaser.Scene {
         onComplete: () => ring.destroy(),
       });
     };
-    this.time.addEvent({ delay: 2100, loop: true, callback: spawnSplash });
-    this.time.addEvent({ delay: 3500, loop: true, callback: spawnSplash });
+    this.time.addEvent({ delay: isMobile ? 4500 : 2100, loop: true, callback: spawnSplash });
+    this.time.addEvent({ delay: isMobile ? 7000 : 3500, loop: true, callback: spawnSplash });
 
     // ── Pool inflatables ──────────────────────────────────────────────────────
     // Pink inflatable ring
@@ -2285,6 +2301,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildDecorativesPark(): void {
+    const isMobile = this.sys.game.device.input.touch;
     // ── Tree ground shadows (below each tree sprite) ──────────────────────────
     const treeCenters: [number, number, number][] = [
       // [cx, cy, treeRectTop]
@@ -2482,7 +2499,7 @@ export class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: ring, scaleX: 4, scaleY: 4, alpha: 0,
         duration: 1400, ease: 'Quad.Out', onComplete: () => ring.destroy() });
     };
-    this.time.addEvent({ delay: 2800, loop: true, callback: spawnPondRipple });
+    this.time.addEvent({ delay: isMobile ? 5600 : 2800, loop: true, callback: spawnPondRipple });
 
     // ── Playground slide (decorative, north of swings) ─────────────────────────
     // Swings rect: x=80,y=680. Slide visual fits y=600-678, x=82-210.
@@ -2648,10 +2665,11 @@ export class GameScene extends Phaser.Scene {
         onComplete: () => mote.destroy(),
       });
     };
-    this.time.addEvent({ delay: 1400, loop: true, callback: spawnPollen });
+    this.time.addEvent({ delay: isMobile ? 3200 : 1400, loop: true, callback: spawnPollen });
   }
 
   private buildDecorativesCity(): void {
+    const isMobile = this.sys.game.device.input.touch;
     // ── Road centre lines (dashed yellow) ────────────────────────────────────
     const lines = this.add.graphics();
     lines.fillStyle(0xffcc00);
@@ -2956,19 +2974,19 @@ export class GameScene extends Phaser.Scene {
 
     // Left N-S street (x 320–480): southbound x=418, northbound x=352
     spawnCar(418,  70, 418, 950, 180, 95,    0);
-    spawnCar(418,  70, 418, 950, 180, 90, 4200);
+    if (!isMobile) spawnCar(418,  70, 418, 950, 180, 90, 4200);
     spawnCar(352, 950, 352,  70,   0, 88, 1400);
-    spawnCar(352, 950, 352,  70,   0, 93, 5600);
+    if (!isMobile) spawnCar(352, 950, 352,  70,   0, 93, 5600);
     // Right N-S street (x 680–900): southbound x=844, northbound x=718
     spawnCar(844,  70, 844, 950, 180, 100,  700);
-    spawnCar(844,  70, 844, 950, 180,  86, 4900);
+    if (!isMobile) spawnCar(844,  70, 844, 950, 180,  86, 4900);
     spawnCar(718, 950, 718,  70,   0,  97, 2500);
-    spawnCar(718, 950, 718,  70,   0,  91, 6300);
+    if (!isMobile) spawnCar(718, 950, 718,  70,   0,  91, 6300);
     // Mid E-W crossing (y 380–580): eastbound y=548, westbound y=432
     spawnCar(  60, 548, 1240, 548,  90, 87,  900);
-    spawnCar(  60, 548, 1240, 548,  90, 94, 5200);
+    if (!isMobile) spawnCar(  60, 548, 1240, 548,  90, 94, 5200);
     spawnCar(1240, 432,   60, 432, -90, 91, 2100);
-    spawnCar(1240, 432,   60, 432, -90, 85, 6700);
+    if (!isMobile) spawnCar(1240, 432,   60, 432, -90, 85, 6700);
 
     // ── Sidewalk pedestrians ──────────────────────────────────────────────────
     const drawCityWalker = (wg: Phaser.GameObjects.Graphics, shirt: number, pants: number) => {
@@ -3043,7 +3061,7 @@ export class GameScene extends Phaser.Scene {
       });
     };
     this.time.addEvent({
-      delay: 1100, loop: true,
+      delay: isMobile ? 2500 : 1100, loop: true,
       callback: () => {
         const [vx, vy] = ventPts[Math.floor(Math.random() * ventPts.length)];
         spawnSteam(vx, vy);
@@ -3059,31 +3077,33 @@ export class GameScene extends Phaser.Scene {
       0x08101e,
     ).setAlpha(0.32).setDepth(0.5);
 
-    // ── More sidewalk pedestrians ─────────────────────────────────────────────
-    // Reuse drawCityWalker / cityWalkLoop defined above in this same call chain.
-    // Walker 5 — north sidewalk above building B
-    const cw5 = this.add.graphics(); drawCityWalker(cw5, 0xdd8822, 0x443311);
-    cw5.setPosition(580, 92); cw5.setDepth(100);
-    cityWalkLoop(cw5, [{ x: 492, y: 92 }, { x: 678, y: 92 }, { x: 492, y: 92 }], 36);
-    this.tweens.add({ targets: cw5, scaleX: 1.06, scaleY: 1.06, duration: 355, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 60 });
+    // ── More sidewalk pedestrians (desktop only — reduce tween load on mobile) ──
+    if (!isMobile) {
+      // Reuse drawCityWalker / cityWalkLoop defined above in this same call chain.
+      // Walker 5 — north sidewalk above building B
+      const cw5 = this.add.graphics(); drawCityWalker(cw5, 0xdd8822, 0x443311);
+      cw5.setPosition(580, 92); cw5.setDepth(100);
+      cityWalkLoop(cw5, [{ x: 492, y: 92 }, { x: 678, y: 92 }, { x: 492, y: 92 }], 36);
+      this.tweens.add({ targets: cw5, scaleX: 1.06, scaleY: 1.06, duration: 355, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 60 });
 
-    // Walker 6 — north sidewalk above building C
-    const cw6 = this.add.graphics(); drawCityWalker(cw6, 0x22aacc, 0x112233);
-    cw6.setPosition(1020, 92); cw6.setDepth(100);
-    cityWalkLoop(cw6, [{ x: 902, y: 92 }, { x: 1138, y: 92 }, { x: 902, y: 92 }], 40);
-    this.tweens.add({ targets: cw6, scaleX: 1.06, scaleY: 1.06, duration: 368, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 170 });
+      // Walker 6 — north sidewalk above building C
+      const cw6 = this.add.graphics(); drawCityWalker(cw6, 0x22aacc, 0x112233);
+      cw6.setPosition(1020, 92); cw6.setDepth(100);
+      cityWalkLoop(cw6, [{ x: 902, y: 92 }, { x: 1138, y: 92 }, { x: 902, y: 92 }], 40);
+      this.tweens.add({ targets: cw6, scaleX: 1.06, scaleY: 1.06, duration: 368, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 170 });
 
-    // Walker 7 — south sidewalk below building E
-    const cw7 = this.add.graphics(); drawCityWalker(cw7, 0xcc3388, 0x332233);
-    cw7.setPosition(580, 874); cw7.setDepth(882);
-    cityWalkLoop(cw7, [{ x: 492, y: 874 }, { x: 678, y: 874 }, { x: 492, y: 874 }], 39);
-    this.tweens.add({ targets: cw7, scaleX: 1.06, scaleY: 1.06, duration: 342, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 110 });
+      // Walker 7 — south sidewalk below building E
+      const cw7 = this.add.graphics(); drawCityWalker(cw7, 0xcc3388, 0x332233);
+      cw7.setPosition(580, 874); cw7.setDepth(882);
+      cityWalkLoop(cw7, [{ x: 492, y: 874 }, { x: 678, y: 874 }, { x: 492, y: 874 }], 39);
+      this.tweens.add({ targets: cw7, scaleX: 1.06, scaleY: 1.06, duration: 342, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 110 });
 
-    // Walker 8 — south sidewalk below building F
-    const cw8 = this.add.graphics(); drawCityWalker(cw8, 0x88cc44, 0x223311);
-    cw8.setPosition(1020, 874); cw8.setDepth(882);
-    cityWalkLoop(cw8, [{ x: 902, y: 874 }, { x: 1138, y: 874 }, { x: 902, y: 874 }], 37);
-    this.tweens.add({ targets: cw8, scaleX: 1.06, scaleY: 1.06, duration: 375, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 220 });
+      // Walker 8 — south sidewalk below building F
+      const cw8 = this.add.graphics(); drawCityWalker(cw8, 0x88cc44, 0x223311);
+      cw8.setPosition(1020, 874); cw8.setDepth(882);
+      cityWalkLoop(cw8, [{ x: 902, y: 874 }, { x: 1138, y: 874 }, { x: 902, y: 874 }], 37);
+      this.tweens.add({ targets: cw8, scaleX: 1.06, scaleY: 1.06, duration: 375, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 220 });
+    }
   }
 
   // ── Collision wiring ────────────────────────────────────────────────────────
@@ -3305,6 +3325,79 @@ export class GameScene extends Phaser.Scene {
     sprite.setDisplaySize(rect.w, rect.h);
     sprite.refreshBody();
     sprite.setDepth(rect.y + rect.h / 2);
+  }
+
+  // ── Mobile virtual joystick ──────────────────────────────────────────────────
+
+  private buildJoystick(): void {
+    if (!this.sys.game.device.input.touch) return;
+
+    const sw = this.scale.width;
+    const sh = this.scale.height;
+    const cx = 90, cy = sh - 90;
+    const radius = this.joystickRadius;
+    this.joystickBaseX = cx;
+    this.joystickBaseY = cy;
+
+    // Base ring
+    this.add.arc(cx, cy, radius, 0, 360, false, 0xffffff, 0.12)
+      .setScrollFactor(0).setDepth(5000)
+      .setStrokeStyle(2, 0xffffff, 0.45);
+
+    // Thumb indicator
+    this.joystickThumb = this.add.arc(cx, cy, 24, 0, 360, false, 0xffffff, 0.4)
+      .setScrollFactor(0).setDepth(5001);
+
+    // Poop button (bottom-right)
+    const pbx = sw - 80, pby = sh - 80;
+    this.add.arc(pbx, pby, 44, 0, 360, false, 0x884400, 0.45)
+      .setScrollFactor(0).setDepth(5000)
+      .setStrokeStyle(2, 0xffaa44, 0.65);
+    this.add.text(pbx, pby, '💩', { fontSize: '26px' })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(5001);
+
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      const sx = p.x, sy = p.y;
+      // Poop button hit (screen coords)
+      if (Math.hypot(sx - pbx, sy - pby) < 52) {
+        this.poopTap = true;
+        return;
+      }
+      // Left half → joystick
+      if (sx < sw / 2) {
+        this.joystickActive = true;
+        this.updateJoystickThumb(sx, sy);
+      }
+    });
+
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (!this.joystickActive) return;
+      this.updateJoystickThumb(p.x, p.y);
+    });
+
+    this.input.on('pointerup', () => {
+      this.joystickActive = false;
+      this.joystickVec = { x: 0, y: 0 };
+      this.joystickThumb?.setPosition(this.joystickBaseX, this.joystickBaseY);
+    });
+  }
+
+  private updateJoystickThumb(sx: number, sy: number): void {
+    const dx = sx - this.joystickBaseX;
+    const dy = sy - this.joystickBaseY;
+    const dist = Math.hypot(dx, dy);
+    const clamped = Math.min(dist, this.joystickRadius);
+    const angle = Math.atan2(dy, dx);
+    this.joystickThumb?.setPosition(
+      this.joystickBaseX + Math.cos(angle) * clamped,
+      this.joystickBaseY + Math.sin(angle) * clamped,
+    );
+    // Dead zone of 8px to avoid drift
+    if (dist > 8) {
+      this.joystickVec = { x: dx / dist, y: dy / dist };
+    } else {
+      this.joystickVec = { x: 0, y: 0 };
+    }
   }
 
   private isWalkable(x: number, y: number): boolean {

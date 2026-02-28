@@ -110,10 +110,13 @@
         background: rgba(255, 255, 255, 0.07);
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-radius: 6px;
-        padding: 7px 10px;
+        padding: 9px 10px;
+        min-height: 38px;
         cursor: pointer;
         text-align: left;
         white-space: nowrap;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
         transition: background 0.14s, color 0.14s, border-color 0.14s;
       }
 
@@ -147,7 +150,7 @@
       <nav id="level-menu">
         <div class="menu-title">Jump to Level</div>
         <button onclick="selectLevel(1)">1 · House</button>
-        <button onclick="selectLevel(2)">2 · Water Park</button>
+        <button onclick="selectLevel(2)">2 · Pool</button>
         <button onclick="selectLevel(3)">3 · Park</button>
         <button onclick="selectLevel(4)">4 · City</button>
         <hr class="menu-sep">

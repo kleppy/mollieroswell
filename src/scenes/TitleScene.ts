@@ -145,6 +145,11 @@ export class TitleScene extends Phaser.Scene {
     const launch = (): void => {
       // Prevent double-fire
       this.input.off('pointerdown', launch);
+      // Unlock AudioContext — required by mobile autoplay policy.
+      try {
+        const ctx = (this.sound as any).context as AudioContext | undefined;
+        if (ctx?.state === 'suspended') ctx.resume();
+      } catch (_) {}
       this.scene.start('GameScene', { level: 1 });
     };
 

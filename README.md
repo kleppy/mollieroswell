@@ -20,12 +20,23 @@ npm run build      # production build → dist/
 
 ## Controls
 
+### Desktop (keyboard)
+
 | Key | Action |
 |-----|--------|
 | WASD / Arrow Keys | Move Mollie |
 | Space | Drop poop (3 charges) |
 | M | Toggle mute |
 | ESC | Back to menu (from Credits) |
+
+### Mobile (touch)
+
+| Control | Action |
+|---------|--------|
+| Left half of screen — drag | Virtual joystick (move Mollie) |
+| 💩 button (bottom-right) | Drop poop |
+
+Touch controls appear automatically on touch-capable devices. Keyboard always overrides the joystick when both are active.
 
 ---
 
@@ -92,7 +103,7 @@ github.com/kleppy/mollieroswell
 | Treat crunch | Treat collected | `public/assets/sfx/crunch.mp3` |
 
 Only one background track plays at a time; the previous track is stopped before the next starts.
-Audio starts after the first user interaction (title screen click or key press), satisfying browser autoplay policy.
+Audio starts after the first user interaction (title screen click/tap or key press), satisfying both desktop and **mobile autoplay policy**. On mobile, the Web Audio context is explicitly resumed on that first tap before the game scene loads.
 Press **M** or click **[SFX ON]** in the HUD to toggle mute. The mute state persists across level transitions and into the Credits screen.
 
 ---
@@ -109,6 +120,46 @@ Roswell uses a four-state FSM:
 | **STUNNED** | Steps on poop → 40% speed for 2 s |
 
 **Vision cone:** 70° wide, 250 px range. LOS is blocked by all solid obstacles — hiding behind furniture breaks detection.
+
+---
+
+## Mobile Support
+
+The game runs on modern mobile browsers (Chrome/Safari for iOS and Android).
+
+### Responsive Scaling
+
+Phaser is configured with `Scale.FIT + CENTER_BOTH`: the 800×600 canvas shrinks or grows to fill the available viewport while maintaining its aspect ratio, centered on screen.
+
+### Virtual Joystick
+
+On touch-capable devices a virtual joystick appears automatically in the bottom-left corner:
+
+- **Drag** anywhere on the **left half** of the canvas to move Mollie.
+- The translucent base ring stays fixed; the thumb indicator follows your finger within a 56 px radius.
+- Releasing the finger stops movement immediately.
+- A 💩 **poop button** appears in the **bottom-right** corner — tap it to drop a poop charge.
+- If a physical keyboard is also connected its input takes priority over the joystick.
+
+### Touch-Friendly UI
+
+- Level-menu buttons (`index.html`) have `touch-action: manipulation` to remove the 300 ms tap delay and a minimum height of 38 px.
+- The **[ Back to Menu ]** button in the Credits screen has extra padding for a larger touch target.
+
+### Performance Safeguards (mobile only)
+
+On touch devices, decorative animation frequency is automatically reduced to keep the frame rate smooth:
+
+| Effect | Desktop interval | Mobile interval |
+|--------|-----------------|-----------------|
+| Level 2 pool splash | 2 100 / 3 500 ms | 4 500 / 7 000 ms |
+| Level 3 pond ripple | 2 800 ms | 5 600 ms |
+| Level 3 pollen motes | 1 400 ms | 3 200 ms |
+| Level 4 steam vents | 1 100 ms | 2 500 ms |
+| Level 4 driving cars | 12 cars | 6 cars (one per lane) |
+| Level 4 extra walkers (cw5–cw8) | shown | hidden |
+
+Gameplay mechanics, enemy counts, and collision bodies are unchanged on all platforms.
 
 ---
 

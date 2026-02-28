@@ -66,23 +66,25 @@ export class Player {
     this.spaceKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
   }
 
-  update(): void {
+  update(joystick?: { x: number; y: number }, poopTap = false): void {
     const left = this.cursors.left.isDown || this.wasd.left.isDown;
     const right = this.cursors.right.isDown || this.wasd.right.isDown;
     const up = this.cursors.up.isDown || this.wasd.up.isDown;
     const down = this.cursors.down.isDown || this.wasd.down.isDown;
+    const anyKeyboard = left || right || up || down;
 
     let vx = 0;
     let vy = 0;
-    if (left) vx -= PLAYER_SPEED;
-    if (right) vx += PLAYER_SPEED;
-    if (up) vy -= PLAYER_SPEED;
-    if (down) vy += PLAYER_SPEED;
-
-    // Diagonal normalisation (×0.707)
-    if (vx !== 0 && vy !== 0) {
-      vx *= 0.707;
-      vy *= 0.707;
+    if (anyKeyboard) {
+      if (left) vx -= PLAYER_SPEED;
+      if (right) vx += PLAYER_SPEED;
+      if (up) vy -= PLAYER_SPEED;
+      if (down) vy += PLAYER_SPEED;
+      // Diagonal normalisation (×0.707)
+      if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+    } else if (joystick && (joystick.x !== 0 || joystick.y !== 0)) {
+      vx = joystick.x * PLAYER_SPEED;
+      vy = joystick.y * PLAYER_SPEED;
     }
 
     this.sprite.setVelocity(vx, vy);
@@ -97,8 +99,8 @@ export class Player {
     this.shadow.setPosition(this.sprite.x, this.sprite.y + 6);
     this.shadow.setDepth(this.sprite.y - 0.5);
 
-    // Poop drop — JustDown prevents hold-to-spam
-    if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.poopCharges > 0) {
+    // Poop drop — JustDown prevents hold-to-spam; poopTap from mobile button
+    if ((Phaser.Input.Keyboard.JustDown(this.spaceKey) || poopTap) && this.poopCharges > 0) {
       this.dropPoop();
     }
   }

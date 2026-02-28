@@ -129,6 +129,7 @@ export class CreditsScene extends Phaser.Scene {
     // ── Back button ───────────────────────────────────────────────────────
     const backBtn = this.add.text(w / 2, h - 32, '[ Back to Menu ]', {
       fontSize: '17px', color: '#ffffff', stroke: '#000000', strokeThickness: 3,
+      padding: { x: 22, y: 14 },
     })
       .setOrigin(0.5)
       .setDepth(11)
