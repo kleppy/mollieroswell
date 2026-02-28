@@ -3169,8 +3169,18 @@ export class GameScene extends Phaser.Scene {
     this.player.sprite.setVelocity(0, 0);
     this.audioManager?.stop();
     if (this.levelNum >= LEVELS.length) {
-      // All levels complete — roll credits
-      this.time.delayedCall(800, () => this.scene.start('CreditsScene'));
+      // Stop level music immediately so it doesn't bleed into the win pause.
+      this.bgMusic?.destroy();
+      this.bgMusic = null;
+      // Show "YOU WIN!" overlay for ~3 s, then roll credits.
+      const ow = this.scale.width, oh = this.scale.height;
+      this.add.rectangle(ow / 2, oh / 2, 460, 180, 0x000000, 0.82)
+        .setScrollFactor(0).setDepth(2000);
+      this.add.text(ow / 2, oh / 2, 'YOU WIN!', {
+        fontSize: '64px', color: '#00ff88',
+        stroke: '#000000', strokeThickness: 6, fontStyle: 'bold',
+      }).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
+      this.time.delayedCall(3000, () => this.scene.start('CreditsScene'));
     } else {
       this.time.delayedCall(400, () =>
         this.scene.start('TransitionScene', { completedLevel: this.levelNum }),

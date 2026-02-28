@@ -180,8 +180,8 @@
           const ctx = game.sound.context;
           if (ctx && ctx.state === 'suspended') ctx.resume();
         } catch (e) {}
-        // Stop any blocking scenes, then restart / start GameScene at chosen level.
-        ['TitleScene', 'TransitionScene'].forEach(function(k) {
+        // Stop any blocking scenes (including Credits if active), then start GameScene.
+        ['TitleScene', 'TransitionScene', 'CreditsScene'].forEach(function(k) {
           try { if (game.scene.isActive(k)) game.scene.stop(k); } catch (e) {}
         });
         const gs = game.scene.getScene('GameScene');

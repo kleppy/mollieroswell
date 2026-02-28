@@ -88,7 +88,7 @@ export class CreditsScene extends Phaser.Scene {
     addLine('Daddy And Julianna', valueSt, 52);
 
     addLine('Music by', headerSt, 6);
-    addLine('Freesounds.org', valueSt, 52);
+    addLine('Freesound.org', valueSt, 52);
 
     addLine('Source Code', headerSt, 6);
     addLine('github.com/kleppy/mollieroswell', linkSt, 64);
