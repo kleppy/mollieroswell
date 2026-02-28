@@ -14,6 +14,9 @@ import {
 
 export type EnemyState = 'PATROL' | 'CHASE' | 'SEARCH' | 'STUNNED';
 
+/** Roswell's actual chase speed — exported so other entities can derive from it. */
+export const ROSWELL_CHASE_SPEED = 140;
+
 export class Enemy {
   sprite: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
 
@@ -30,7 +33,7 @@ export class Enemy {
   private waypoints: { x: number; y: number }[] = [];
   // Tuned speeds (~24% below imported constants for better game feel)
   private readonly patrolSpeed = 110;
-  private readonly chaseSpeed  = 140;
+  private readonly chaseSpeed  = ROSWELL_CHASE_SPEED;
   // ── Stuck detection ──────────────────────────────────────────────────────────
   private lastX = 0;
   private lastY = 0;

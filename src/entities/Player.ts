@@ -110,6 +110,7 @@ export class Player {
       this.sprite.y,
       'poop',
     ) as Phaser.Physics.Arcade.Image;
+    poop.setDisplaySize(19, 19);
     poop.setDepth(4);
     poop.refreshBody();
 

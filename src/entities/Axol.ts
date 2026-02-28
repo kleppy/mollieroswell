@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { Rect } from '../constants';
+import { ROSWELL_CHASE_SPEED } from './Enemy';
 
 export class Axol {
   sprite: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
@@ -7,7 +8,7 @@ export class Axol {
   private shadow: Phaser.GameObjects.Ellipse;
   private alive = true;
   private scene: Phaser.Scene;
-  private readonly speed = 230;
+  private readonly speed = Math.round(ROSWELL_CHASE_SPEED * 1.01); // always 1% faster than Roswell
   private facingRight = true;
   // Tracked target — nulled immediately when the treat is collected/destroyed
   private currentTarget: Phaser.Physics.Arcade.Image | null = null;
@@ -21,6 +22,10 @@ export class Axol {
   private lastY = 0;
   private stuckTimer = 0;
   private blockedCooldown = 0;
+  // ── LOS detour state ─────────────────────────────────────────────────────────
+  private detourPoint: { x: number; y: number } | null = null;
+  private detourTimer = 0;
+  private detourDir = 1; // +1 or -1 selects which perpendicular side to use
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.scene = scene;
@@ -50,6 +55,8 @@ export class Axol {
   poof(): void {
     if (!this.alive) return;
     this.alive = false;
+    this.sprite.setVelocity(0, 0);
+    this.sprite.body.enable = false; // stop physics immediately
     const x = this.sprite.x;
     const y = this.sprite.y;
     this.sprite.destroy();
@@ -71,11 +78,15 @@ export class Axol {
     // Drop target if it was collected/destroyed since last frame
     if (this.currentTarget && !this.currentTarget.active) {
       this.currentTarget = null;
+      this.detourPoint = null;
+      this.detourTimer = 0;
     }
 
     // Always pick nearest when we have no target
     if (!this.currentTarget) {
       this.currentTarget = this.findNearest(treatGroup);
+      this.detourPoint = null;
+      this.detourTimer = 0;
     }
 
     if (!this.currentTarget) {
@@ -84,7 +95,24 @@ export class Axol {
       return;
     }
 
-    this.steerToward(this.currentTarget.x, this.currentTarget.y);
+    // LOS-aware steering: detour around obstacles if the direct path is blocked
+    if (this.hasLOS(this.sprite.x, this.sprite.y, this.currentTarget.x, this.currentTarget.y)) {
+      // Clear path — chase directly
+      this.detourPoint = null;
+      this.detourTimer = 0;
+      this.steerToward(this.currentTarget.x, this.currentTarget.y);
+    } else {
+      // Try a different treat that has a clear path
+      const alt = this.findNearestWithLOS(treatGroup);
+      if (alt) {
+        this.detourPoint = null;
+        this.detourTimer = 0;
+        this.steerToward(alt.x, alt.y);
+      } else {
+        // All treats blocked — side-step around the obstacle
+        this.updateDetour(delta);
+      }
+    }
     this.updateStuck(delta);
     this.updateVisuals();
   }
@@ -178,6 +206,108 @@ export class Axol {
     if (this.currentTarget) {
       const offset = (Math.random() - 0.5) * (Math.PI / 3);
       this.steerToward(this.currentTarget.x, this.currentTarget.y, offset);
+    }
+  }
+
+  // ── LOS and detour ───────────────────────────────────────────────────────────
+
+  /** Nearest active treat that Axol can see without any obstacle in the way. */
+  private findNearestWithLOS(treatGroup: Phaser.Physics.Arcade.StaticGroup): Phaser.Physics.Arcade.Image | null {
+    const treats = treatGroup.getChildren() as Phaser.Physics.Arcade.Image[];
+    let nearest: Phaser.Physics.Arcade.Image | null = null;
+    let nearestDistSq = Infinity;
+    for (const t of treats) {
+      if (!t.active) continue;
+      if (!this.hasLOS(this.sprite.x, this.sprite.y, t.x, t.y)) continue;
+      const dx = t.x - this.sprite.x;
+      const dy = t.y - this.sprite.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq < nearestDistSq) { nearestDistSq = dSq; nearest = t; }
+    }
+    return nearest;
+  }
+
+  /** True if the segment (ax,ay)→(tx,ty) does not clip any obstacle rect. */
+  private hasLOS(ax: number, ay: number, tx: number, ty: number): boolean {
+    const INF = 4; // small inflation so tight corners still trigger a detour
+    for (const r of this.obstacles) {
+      if (this.segmentIntersectsAABB(
+            ax, ay, tx, ty,
+            r.x - INF, r.y - INF, r.x + r.w + INF, r.y + r.h + INF)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Liang-Barsky segment vs axis-aligned box intersection. */
+  private segmentIntersectsAABB(
+    x1: number, y1: number, x2: number, y2: number,
+    left: number, top: number, right: number, bottom: number,
+  ): boolean {
+    let t0 = 0, t1 = 1;
+    const dx = x2 - x1, dy = y2 - y1;
+    const checks: [number, number][] = [
+      [-dx, x1 - left], [dx, right  - x1],
+      [-dy, y1 - top],  [dy, bottom - y1],
+    ];
+    for (const [p, q] of checks) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const t = q / p;
+      if (p < 0) t0 = Math.max(t0, t);
+      else       t1 = Math.min(t1, t);
+      if (t0 > t1) return false;
+    }
+    return true;
+  }
+
+  /** Advance detour mode: recompute detour point when needed; steer toward it. */
+  private updateDetour(delta: number): void {
+    this.detourTimer += delta;
+    const arrived = this.detourPoint !== null &&
+      Math.hypot(this.sprite.x - this.detourPoint.x,
+                 this.sprite.y - this.detourPoint.y) < 24;
+    if (!this.detourPoint || arrived || this.detourTimer > 700) {
+      this.computeDetourPoint();
+      this.detourTimer = 0;
+    }
+    if (this.detourPoint) {
+      this.steerToward(this.detourPoint.x, this.detourPoint.y);
+    }
+  }
+
+  /**
+   * Compute a perpendicular side-step point to bypass the blocked obstacle.
+   * Tries both perp directions and picks the one that is walkable; flips if needed.
+   */
+  private computeDetourPoint(): void {
+    if (!this.currentTarget) { this.detourPoint = null; return; }
+    const dx = this.currentTarget.x - this.sprite.x;
+    const dy = this.currentTarget.y - this.sprite.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) { this.detourPoint = null; return; }
+
+    const px = -dy / len; // perpendicular unit vector
+    const py =  dx / len;
+    const D = 110;
+
+    const c1 = { x: this.sprite.x + px * D,  y: this.sprite.y + py * D  };
+    const c2 = { x: this.sprite.x - px * D,  y: this.sprite.y - py * D  };
+    const ok1 = this.isSafePosition(c1.x, c1.y);
+    const ok2 = this.isSafePosition(c2.x, c2.y);
+
+    // Favour current direction; flip only when current side becomes blocked
+    if (this.detourDir === 1 && ok1) {
+      this.detourPoint = c1;
+    } else if (ok2) {
+      this.detourDir = -1;
+      this.detourPoint = c2;
+    } else if (ok1) {
+      this.detourDir = 1;
+      this.detourPoint = c1;
+    } else {
+      // Both perps blocked; push further out as a last resort
+      this.detourPoint = { x: this.sprite.x + px * 160, y: this.sprite.y + py * 160 };
     }
   }
 

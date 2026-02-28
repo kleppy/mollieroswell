@@ -706,6 +706,7 @@ export class GameScene extends Phaser.Scene {
         }
       }
       const t = this.treatGroup.create(tx, ty, 'treat') as Phaser.Physics.Arcade.Image;
+      t.setDisplaySize(12, 12);
       t.setDepth(9990);
       t.refreshBody();
       const emitter = this.add.particles(tx, ty, 'sparkle', {
@@ -1042,6 +1043,7 @@ export class GameScene extends Phaser.Scene {
       this.treatGroup,
       (_axolSprite, treatObj) => {
         if (this.isGameOver) return;
+        if (!this.axol?.isAlive()) return;
         const treat = treatObj as Phaser.Physics.Arcade.Image;
         (treat.getData('emitter') as Phaser.GameObjects.Particles.ParticleEmitter)?.destroy();
         treat.destroy();
@@ -1055,7 +1057,8 @@ export class GameScene extends Phaser.Scene {
 
     // Roswell catches Axol → poof
     const catchAxol = () => {
-      this.axol?.poof();
+      if (!this.axol?.isAlive()) return;
+      this.axol.poof();
       this.axol = null;
     };
     this.physics.add.overlap(this.enemy.sprite, axol.sprite, catchAxol);
