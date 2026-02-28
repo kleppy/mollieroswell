@@ -2,13 +2,14 @@ import Phaser from 'phaser';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { TransitionScene } from './scenes/TransitionScene';
+import { CreditsScene } from './scenes/CreditsScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: 800,
   height: 600,
   backgroundColor: '#1a1a2e',
-  parent: document.body,
+  parent: 'game-canvas',
   physics: {
     default: 'arcade',
     arcade: {
@@ -18,7 +19,9 @@ const config: Phaser.Types.Core.GameConfig = {
   },
   // TitleScene first — it launches GameScene on user interaction,
   // which also satisfies browser autoplay policy.
-  scene: [TitleScene, GameScene, TransitionScene],
+  scene: [TitleScene, GameScene, TransitionScene, CreditsScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+// Expose for the HTML level-select menu.
+(window as any).__phaserGame = game;

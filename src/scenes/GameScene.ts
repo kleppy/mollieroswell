@@ -14,7 +14,8 @@ import {
 export class GameScene extends Phaser.Scene {
   private player!: Player;
   private enemy!: Enemy;
-  private enemy2: Enemy | null = null; // Level 3 only
+  private enemy2: Enemy | null = null; // Level 3 + Level 4
+  private enemy3: Enemy | null = null; // Level 4 only (third Roswell)
   private axol: Axol | null = null;
   private ui!: UI;
   private wallGroup!: Phaser.Physics.Arcade.StaticGroup;
@@ -27,6 +28,7 @@ export class GameScene extends Phaser.Scene {
   private audioManager!: AudioManager;
   /** ms until next bark; initialised on level start. */
   private barkTimer = 0;
+  private bgMusic: Phaser.Sound.BaseSound | null = null;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -40,6 +42,12 @@ export class GameScene extends Phaser.Scene {
     this.load.image('axol', '/assets/axol.png');
     // Required file: public/assets/sfx/crunch.mp3 (or .ogg)
     this.load.audio('crunch', ['/assets/sfx/crunch.mp3', '/assets/sfx/crunch.ogg']);
+    // Roswell bark SFX
+    this.load.audio('roswell-bark', '/assets/dogbark.wav');
+    // Per-level background music (levels 2–4)
+    this.load.audio('bg-l2', '/assets/poollevel.mp3');
+    this.load.audio('bg-l3', '/assets/cityparklevel.wav');
+    this.load.audio('bg-l4', '/assets/citylevel.wav');
   }
 
   init(data: { level?: number }): void {
@@ -70,6 +78,7 @@ export class GameScene extends Phaser.Scene {
     this.player = new Player(this, this.cfg.playerStart.x, this.cfg.playerStart.y);
     this.enemy  = new Enemy(this, this.cfg.enemyStart.x,  this.cfg.enemyStart.y);
     this.enemy2 = null;
+    this.enemy3 = null;
 
     const allObstacles: Rect[] = [
       ...this.cfg.walls,
@@ -83,6 +92,17 @@ export class GameScene extends Phaser.Scene {
       this.enemy2 = new Enemy(this, 1150, 500);
       this.enemy2.setObstacles(allObstacles);
       this.enemy2.setWaypoints(this.cfg.patrolWaypoints);
+    }
+
+    // Level 4: two extra Roswells patrolling different city zones.
+    if (this.levelNum === 4) {
+      this.enemy2 = new Enemy(this, 200, 250);   // NW — near building A
+      this.enemy2.setObstacles(allObstacles);
+      this.enemy2.setWaypoints(this.cfg.patrolWaypoints);
+
+      this.enemy3 = new Enemy(this, 1000, 700);  // SE — near building F
+      this.enemy3.setObstacles(allObstacles);
+      this.enemy3.setWaypoints(this.cfg.patrolWaypoints);
     }
 
     this.wireCollisions();
@@ -99,11 +119,23 @@ export class GameScene extends Phaser.Scene {
       // If the previous mute state was "on", restore it (stored as scene data).
       if (this.data?.get('muted') === true) {
         this.audioManager.toggleMute();
+        this.sound.mute = true;  // also mute Phaser sounds (bark + music)
       }
+    }
+
+    // Per-level background music (levels 2–4 use real audio files; level 1 keeps white-noise).
+    const bgMusicKey = this.levelNum === 2 ? 'bg-l2'
+                     : this.levelNum === 3 ? 'bg-l3'
+                     : this.levelNum === 4 ? 'bg-l4'
+                     : null;
+    if (bgMusicKey && this.cache.audio.exists(bgMusicKey)) {
+      this.bgMusic = this.sound.add(bgMusicKey, { loop: true, volume: 0.4 });
+      this.bgMusic.play();
     }
 
     this.ui = new UI(this, this.levelNum, LEVELS.length, this.cfg.totalTreats, () => {
       const muted = this.audioManager?.toggleMute() ?? false;
+      this.sound.mute = muted;  // sync Phaser sounds (bark WAV + bg music)
       // Persist mute state across scene restarts via Phaser data manager.
       this.data.set('muted', muted);
       return muted;
@@ -113,7 +145,11 @@ export class GameScene extends Phaser.Scene {
     this.barkTimer = 2000 + Math.random() * 2000;
 
     // Stop audio when the scene shuts down (restart or transition).
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.audioManager?.stop());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.audioManager?.stop();
+      this.bgMusic?.destroy();
+      this.bgMusic = null;
+    });
 
     console.assert(
       this.treatGroup.getChildren().length === this.cfg.totalTreats,
@@ -146,6 +182,10 @@ export class GameScene extends Phaser.Scene {
       const t2 = getTarget(this.enemy2.sprite.x, this.enemy2.sprite.y);
       this.enemy2.update(delta, t2.x, t2.y);
     }
+    if (this.enemy3) {
+      const t3 = getTarget(this.enemy3.sprite.x, this.enemy3.sprite.y);
+      this.enemy3.update(delta, t3.x, t3.y);
+    }
     this.axol?.update(delta, this.treatGroup);
 
     this.ui.update(this.player.getTreatCount(), this.player.getPoopCharges());
@@ -173,7 +213,21 @@ export class GameScene extends Phaser.Scene {
       if (dist2 < dist) { dist = dist2; }
       if (this.enemy2.getState() === 'CHASE') { state = 'CHASE'; }
     }
-    this.audioManager.playBark(dist);
+    if (this.enemy3) {
+      const dx3 = this.enemy3.sprite.x - this.player.sprite.x;
+      const dy3 = this.enemy3.sprite.y - this.player.sprite.y;
+      const dist3 = Math.sqrt(dx3 * dx3 + dy3 * dy3);
+      if (dist3 < dist) { dist = dist3; }
+      if (this.enemy3.getState() === 'CHASE') { state = 'CHASE'; }
+    }
+    // Play real bark WAV (distance-attenuated); fall back to synth if not loaded.
+    if (this.cache.audio.exists('roswell-bark')) {
+      const maxDist = 500;
+      const vol = (1 - Math.min(dist / maxDist, 1) * 0.85) * 0.55;
+      if (vol > 0.002) this.sound.play('roswell-bark', { volume: vol });
+    } else {
+      this.audioManager.playBark(dist);
+    }
 
     // Bark interval: Chase = very frequent, Patrol = occasional, else rare.
     const interval =
@@ -1390,71 +1444,69 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildTexturesCity(): void {
-    // Building — concrete facade with lit/unlit windows + door
-    this.ensureTexture('city-building', 32, 32, (gfx) => {
-      // Concrete body
-      gfx.fillStyle(0x787878); gfx.fillRect(0, 0, 32, 32);
-      // Floor separation lines
-      gfx.fillStyle(0x686868);
-      gfx.fillRect(0, 10, 32, 1); gfx.fillRect(0, 20, 32, 1);
-      // Concrete edge borders
-      gfx.fillRect(0, 0, 32, 2); gfx.fillRect(0, 30, 32, 2);
-      gfx.fillRect(0, 0, 2, 32); gfx.fillRect(30, 0, 2, 32);
-      // Concrete highlight (top edge)
-      gfx.fillStyle(0x929292);
-      gfx.fillRect(0, 0, 32, 1); gfx.fillRect(0, 0, 1, 32);
-      // Lit windows (warm yellow)
-      gfx.fillStyle(0xffe880);
-      gfx.fillRect(4, 3, 5, 5); gfx.fillRect(12, 3, 5, 5);
-      gfx.fillRect(20, 3, 5, 5); gfx.fillRect(28, 3, 2, 5);
-      gfx.fillRect(4, 13, 5, 5); gfx.fillRect(20, 13, 5, 5);
-      // Unlit windows (dark grey glass)
-      gfx.fillStyle(0x4a6070);
-      gfx.fillRect(12, 13, 5, 5); gfx.fillRect(28, 13, 2, 5);
-      gfx.fillRect(4, 23, 5, 5); gfx.fillRect(20, 23, 5, 5);
-      // More lit windows (3rd floor)
-      gfx.fillStyle(0xffd860);
-      gfx.fillRect(12, 23, 5, 5);
-      // Window frame lines
-      gfx.fillStyle(0x505050);
-      for (let gy = 3; gy < 28; gy += 10)
-        for (let gx = 4; gx < 28; gx += 8) {
-          gfx.fillRect(gx, gy, 5, 1);
-          gfx.fillRect(gx, gy, 1, 5);
-          gfx.fillRect(gx + 2, gy, 1, 5);
+    // Building tile — upgraded concrete facade (stretched over building rect)
+    this.ensureTexture('city-building', 64, 64, (gfx) => {
+      gfx.fillStyle(0x7e7e86); gfx.fillRect(0, 0, 64, 64);
+      // Panel reveal lines
+      gfx.fillStyle(0x606068);
+      for (let fy = 0; fy < 64; fy += 16) gfx.fillRect(0, fy, 64, 1);
+      for (let fx = 0; fx < 64; fx += 16) gfx.fillRect(fx, 0, 1, 64);
+      // Edge highlights
+      gfx.fillStyle(0x969699); gfx.fillRect(0, 0, 64, 1); gfx.fillRect(0, 0, 1, 64);
+      gfx.fillStyle(0x565660); gfx.fillRect(0, 63, 64, 1); gfx.fillRect(63, 0, 1, 64);
+      // 3×3 window grid
+      for (let wr = 0; wr < 3; wr++) {
+        for (let wc = 0; wc < 3; wc++) {
+          const wx = 5 + wc * 19, wy = 5 + wr * 19;
+          const lit = ((wr * 3 + wc) * 7 + 3) % 11 > 4;
+          gfx.fillStyle(0x505055); gfx.fillRect(wx, wy, 13, 12);
+          gfx.fillStyle(lit ? 0xffe880 : 0x3a5060); gfx.fillRect(wx + 1, wy + 1, 11, 10);
+          if (lit) { gfx.fillStyle(0xffeeaa, 0.7); gfx.fillRect(wx + 1, wy + 1, 5, 3); }
+          gfx.fillStyle(0x888890); gfx.fillRect(wx - 1, wy + 11, 15, 2);
         }
-      // Ground floor entrance door
-      gfx.fillStyle(0x3a3a3a); gfx.fillRect(13, 24, 6, 8);
-      gfx.fillStyle(0x5588aa); gfx.fillRect(14, 25, 4, 7);
-      gfx.fillStyle(0x88bbcc); gfx.fillRect(14, 25, 2, 2);
+      }
     });
 
-    // Car — top-down, detailed body + windshields + roof light
+    // Car — red (base color, keep key for backward compat)
     this.ensureTexture('city-car', 16, 24, (gfx) => {
-      // Car body (dark red)
       gfx.fillStyle(0xcc2020); gfx.fillRect(0, 0, 16, 24);
-      // Car body side highlight
-      gfx.fillStyle(0xdd4040); gfx.fillRect(1, 0, 14, 1);
-      // Front windshield
       gfx.fillStyle(0x8ab8d8); gfx.fillRect(2, 3, 12, 6);
-      // Front glass reflection
       gfx.fillStyle(0xccddee); gfx.fillRect(2, 3, 5, 2);
-      // Rear windshield
       gfx.fillStyle(0x6a9ab8); gfx.fillRect(2, 16, 12, 5);
       gfx.fillStyle(0x99bbd4); gfx.fillRect(2, 16, 4, 2);
-      // Wheels (all four corners)
       gfx.fillStyle(0x1a1a1a);
       gfx.fillRect(0, 2, 3, 5); gfx.fillRect(13, 2, 3, 5);
       gfx.fillRect(0, 17, 3, 5); gfx.fillRect(13, 17, 3, 5);
-      // Wheel highlight (rim)
       gfx.fillStyle(0x888888);
       gfx.fillRect(0, 3, 1, 3); gfx.fillRect(15, 3, 1, 3);
       gfx.fillRect(0, 18, 1, 3); gfx.fillRect(15, 18, 1, 3);
-      // Car roof (slightly lighter body colour)
       gfx.fillStyle(0xee4444); gfx.fillRect(2, 9, 12, 7);
-      // Roof centre stripe
       gfx.fillStyle(0xaa1818); gfx.fillRect(7, 9, 2, 7);
     });
+
+    // Car color variants — blue, yellow, green, white
+    for (const [key, body, roof, stripe] of [
+      ['city-car-blue',   0x2244aa, 0x3355cc, 0x112288],
+      ['city-car-yellow', 0xddaa00, 0xeecc22, 0xaa8800],
+      ['city-car-green',  0x228844, 0x33aa55, 0x116633],
+      ['city-car-white',  0xdddddd, 0xeeeeee, 0xaaaaaa],
+    ] as Array<[string, number, number, number]>) {
+      this.ensureTexture(key, 16, 24, (gfx) => {
+        gfx.fillStyle(body);     gfx.fillRect(0, 0, 16, 24);
+        gfx.fillStyle(0x8ab8d8); gfx.fillRect(2, 3, 12, 6);
+        gfx.fillStyle(0xccddee); gfx.fillRect(2, 3, 5, 2);
+        gfx.fillStyle(0x6a9ab8); gfx.fillRect(2, 16, 12, 5);
+        gfx.fillStyle(0x99bbd4); gfx.fillRect(2, 16, 4, 2);
+        gfx.fillStyle(0x1a1a1a);
+        gfx.fillRect(0, 2, 3, 5); gfx.fillRect(13, 2, 3, 5);
+        gfx.fillRect(0, 17, 3, 5); gfx.fillRect(13, 17, 3, 5);
+        gfx.fillStyle(0x888888);
+        gfx.fillRect(0, 3, 1, 3); gfx.fillRect(15, 3, 1, 3);
+        gfx.fillRect(0, 18, 1, 3); gfx.fillRect(15, 18, 1, 3);
+        gfx.fillStyle(roof);   gfx.fillRect(2, 9, 12, 7);
+        gfx.fillStyle(stripe); gfx.fillRect(7, 9, 2, 7);
+      });
+    }
   }
 
   private buildTreats(): void {
@@ -2651,18 +2703,27 @@ export class GameScene extends Phaser.Scene {
       { x: 685, y: 120 }, { x: 685, y: 380 }, { x: 685, y: 640 },
       { x: 895, y: 380 }, { x: 895, y: 640 },
     ]) {
+      // Layered ground light pool: outer → mid → bright inner
+      const glow = this.add.graphics();
+      glow.fillStyle(0xffffcc, 0.04); glow.fillEllipse(slp.x + 9, slp.y + 8, 88, 44);
+      glow.fillStyle(0xffffcc, 0.09); glow.fillEllipse(slp.x + 9, slp.y + 8, 52, 26);
+      glow.fillStyle(0xffe880, 0.19); glow.fillEllipse(slp.x + 9, slp.y + 8, 22, 11);
+      glow.setDepth(0.66);
+      this.tweens.add({
+        targets: glow, alpha: { from: 1, to: 0.52 },
+        duration: 2800 + (slp.x % 7) * 280,
+        ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: (slp.y % 9) * 190,
+      });
       // Pole
       this.add.rectangle(slp.x, slp.y, 4, 24, 0x404040).setDepth(slp.y + 12);
       // Arm
       this.add.rectangle(slp.x + 4, slp.y - 12, 12, 4, 0x404040).setDepth(slp.y);
       // Lamp housing
       this.add.rectangle(slp.x + 9, slp.y - 12, 8, 6, 0x303030).setDepth(slp.y + 1);
-      // Light (warm glow)
+      // Soft halo behind bulb
+      this.add.rectangle(slp.x + 9, slp.y - 9, 20, 14, 0xffffee).setAlpha(0.14).setDepth(slp.y + 1.5);
+      // Bright bulb point
       this.add.rectangle(slp.x + 9, slp.y - 9, 6, 4, 0xffffaa).setDepth(slp.y + 2);
-      // Faint light pool on ground
-      const glow = this.add.graphics();
-      glow.fillStyle(0xffffcc, 0.06); glow.fillEllipse(slp.x + 9, slp.y + 8, 40, 20);
-      glow.setDepth(0.63);
     }
 
     // ── Fire hydrants ─────────────────────────────────────────────────────────
@@ -2716,6 +2777,313 @@ export class GameScene extends Phaser.Scene {
       this.add.rectangle(tc.x, tc.y - 5, 12, 4, 0x333333).setDepth(tc.y + 12);
       this.add.rectangle(tc.x + 3, tc.y - 2, 2, 10, 0x555555).setDepth(tc.y + 10);
     }
+
+    // ── Manhole covers on road surface ───────────────────────────────────────
+    for (const [mx, my] of [[400, 300], [790, 490], [400, 720]] as [number, number][]) {
+      const mc = this.add.graphics();
+      mc.fillStyle(0x484848); mc.fillEllipse(mx, my, 20, 20);
+      mc.fillStyle(0x383838); mc.fillEllipse(mx, my, 16, 16);
+      mc.lineStyle(1, 0x585858, 0.9); mc.strokeEllipse(mx, my, 10, 10);
+      mc.strokeEllipse(mx, my, 4, 4);
+      mc.setDepth(my + 0.8);
+    }
+
+    // ── Building facade overlays ──────────────────────────────────────────────
+    const bldgCfgs: { x: number; y: number; w: number; h: number; style: 'brick' | 'glass' | 'concrete' }[] = [
+      { x: 80,  y: 120, w: 240, h: 260, style: 'brick' },
+      { x: 480, y: 120, w: 200, h: 220, style: 'glass' },
+      { x: 900, y: 120, w: 240, h: 260, style: 'concrete' },
+      { x: 80,  y: 580, w: 240, h: 260, style: 'brick' },
+      { x: 480, y: 580, w: 200, h: 260, style: 'glass' },
+      { x: 900, y: 580, w: 240, h: 260, style: 'concrete' },
+    ];
+
+    for (const b of bldgCfgs) {
+      const baseDepth = b.y + b.h / 2 + 2;
+      const litSeed   = (b.x >> 3) + (b.y >> 2);
+      const fg        = this.add.graphics().setDepth(baseDepth);
+
+      if (b.style === 'brick') {
+        // Base brick color
+        fg.fillStyle(0x8a3820, 0.93); fg.fillRect(b.x, b.y, b.w, b.h);
+        // Horizontal mortar lines
+        fg.fillStyle(0xbaa882, 0.6);
+        for (let ry = b.y + 14; ry < b.y + b.h; ry += 14) fg.fillRect(b.x, ry, b.w, 2);
+        // Vertical mortar (alternating row offset)
+        fg.fillStyle(0xa09870, 0.4);
+        for (let rr = 0; rr * 14 < b.h; rr++) {
+          const off = (rr % 2) * 18;
+          for (let bxOff = off; bxOff < b.w; bxOff += 36) fg.fillRect(b.x + bxOff, b.y + rr * 14, 2, 14);
+        }
+        // Cornice top band
+        fg.fillStyle(0xd0b090); fg.fillRect(b.x, b.y, b.w, 9);
+        fg.fillStyle(0x907050); fg.fillRect(b.x, b.y + 8, b.w, 2);
+        // Window grid (5 cols × 6 rows)
+        const wCols = 5, wRows = 6, wW = 20, wH = 22;
+        const wStepX = Math.floor((b.w - 40) / (wCols - 1));
+        const wStepY = Math.floor((b.h - 70) / (wRows - 1));
+        for (let wr = 0; wr < wRows; wr++) {
+          for (let wc = 0; wc < wCols; wc++) {
+            const wx = b.x + 18 + wc * wStepX, wy = b.y + 18 + wr * wStepY;
+            const lit = ((litSeed + wr * 7 + wc * 3) * 11) % 13 > 4;
+            fg.fillStyle(0x3a2810); fg.fillRect(wx - 2, wy - 2, wW + 4, wH + 4);
+            fg.fillStyle(lit ? 0xffd870 : 0x1c2c38); fg.fillRect(wx, wy, wW, wH);
+            if (lit) { fg.fillStyle(0xfff0aa, 0.55); fg.fillRect(wx, wy, 8, 6); }
+            fg.fillStyle(0xb09070); fg.fillRect(wx - 2, wy + wH + 2, wW + 4, 3);
+          }
+        }
+        // Ground floor entrance
+        const dx = b.x + Math.floor(b.w / 2) - 12;
+        fg.fillStyle(0x1a1008); fg.fillRect(dx, b.y + b.h - 52, 24, 50);
+        fg.fillStyle(0x4a7090); fg.fillRect(dx + 2, b.y + b.h - 50, 20, 48);
+        fg.fillStyle(0x88aabb, 0.4); fg.fillRect(dx + 2, b.y + b.h - 50, 8, 14);
+
+      } else if (b.style === 'glass') {
+        // Dark blue-grey base
+        fg.fillStyle(0x2a3c4e, 0.93); fg.fillRect(b.x, b.y, b.w, b.h);
+        // Steel mullion grid
+        const mColW = 22, mRowH = 20;
+        fg.fillStyle(0x1a2a38, 0.85);
+        for (let gx = b.x; gx <= b.x + b.w; gx += mColW) fg.fillRect(gx, b.y, 2, b.h);
+        for (let gy = b.y; gy <= b.y + b.h; gy += mRowH) fg.fillRect(b.x, gy, b.w, 2);
+        // Glass panels with sky reflection
+        for (let pc = 0; pc * mColW < b.w; pc++) {
+          for (let pr = 0; pr * mRowH < b.h; pr++) {
+            const px = b.x + 2 + pc * mColW, py = b.y + 2 + pr * mRowH;
+            const pw = Math.min(mColW - 2, b.x + b.w - px);
+            const ph = Math.min(mRowH - 2, b.y + b.h - py);
+            if (pw <= 0 || ph <= 0) continue;
+            const vr = (pc + pr) % 3;
+            fg.fillStyle(vr === 0 ? 0x3a5566 : vr === 1 ? 0x2e4a58 : 0x445e70, 0.75);
+            fg.fillRect(px, py, pw, ph);
+            if (pc % 3 === 0) { fg.fillStyle(0x88aacc, 0.13); fg.fillRect(px, py, 5, ph); }
+          }
+        }
+        // Parapet cap
+        fg.fillStyle(0x506878); fg.fillRect(b.x, b.y, b.w, 7);
+
+      } else { // concrete
+        fg.fillStyle(0x7c7c84, 0.93); fg.fillRect(b.x, b.y, b.w, b.h);
+        // Horizontal panel reveals every 40px
+        fg.fillStyle(0x5c5c64);
+        for (let ry = b.y; ry <= b.y + b.h; ry += 40) fg.fillRect(b.x, ry, b.w, 3);
+        // Vertical column reveals (thirds)
+        fg.fillRect(b.x + Math.floor(b.w / 3), b.y, 3, b.h);
+        fg.fillRect(b.x + Math.floor(b.w * 2 / 3), b.y, 3, b.h);
+        // Cornice
+        fg.fillStyle(0x8c8c94); fg.fillRect(b.x, b.y, b.w, 10);
+        fg.fillStyle(0x606068); fg.fillRect(b.x, b.y + 9, b.w, 2);
+        // Window grid (4 cols × 6 rows)
+        const wCols = 4, wRows = 6, wW = 22, wH = 18;
+        const wStepX = Math.floor((b.w - 40) / (wCols - 1));
+        const wStepY = Math.floor((b.h - 50) / (wRows - 1));
+        for (let wr = 0; wr < wRows; wr++) {
+          for (let wc = 0; wc < wCols; wc++) {
+            const wx = b.x + 14 + wc * wStepX, wy = b.y + 16 + wr * wStepY;
+            const lit = ((litSeed + wr * 5 + wc * 11) * 7) % 11 > 4;
+            fg.fillStyle(0x484850); fg.fillRect(wx - 2, wy - 2, wW + 4, wH + 4);
+            fg.fillStyle(lit ? 0xffe070 : 0x2e4050); fg.fillRect(wx, wy, wW, wH);
+            if (lit) { fg.fillStyle(0xfff0aa, 0.5); fg.fillRect(wx, wy, 8, 5); }
+            fg.fillStyle(0x8888a0); fg.fillRect(wx - 2, wy + wH + 2, wW + 4, 3);
+          }
+        }
+      }
+
+      // Flickering warm-light windows (separate layer, tweened alpha)
+      const fw = this.add.graphics().setDepth(baseDepth + 1);
+      const fCols = 3, fRows = 2;
+      const fStepX = Math.floor(b.w / (fCols + 1)), fStepY = Math.floor(b.h / (fRows + 2));
+      for (let fr = 0; fr < fRows; fr++) {
+        for (let fc = 0; fc < fCols; fc++) {
+          fw.fillStyle(0xffcc44, 0.75);
+          fw.fillRect(b.x + (fc + 1) * fStepX - 7, b.y + (fr + 1) * fStepY - 5, 14, 10);
+        }
+      }
+      this.tweens.add({
+        targets: fw, alpha: { from: 1, to: 0.08 },
+        duration: 2000 + (litSeed % 9) * 380,
+        ease: 'Sine.InOut', yoyo: true, repeat: -1,
+        delay: (litSeed % 7) * 250,
+      });
+    }
+
+    // ── Person silhouettes in windows (brick buildings A and D) ──────────────
+    for (const [bx, by, dep] of [[80, 120, 254], [80, 580, 714]] as [number, number, number][]) {
+      const sg = this.add.graphics().setDepth(dep);
+      for (const [sx, sy] of [[bx + 38, by + 54], [bx + 126, by + 90], [bx + 82, by + 162]] as [number, number][]) {
+        sg.fillStyle(0x0a0604, 0.65);
+        sg.fillRect(sx + 2, sy, 7, 10);
+        sg.fillCircle(sx + 5, sy - 4, 4.5);
+      }
+    }
+
+    // ── Traffic lights at N-S × E-W intersections ────────────────────────────
+    for (const [tlx, tly] of [
+      [326, 376], [478, 376], [682, 376], [898, 376],
+    ] as [number, number][]) {
+      const tld = tly + 20;
+      this.add.rectangle(tlx, tly + 10, 4, 28, 0x303030).setDepth(tld);
+      this.add.rectangle(tlx + 8, tly - 4, 18, 4, 0x303030).setDepth(tld + 1);
+      this.add.rectangle(tlx + 16, tly - 4, 10, 24, 0x202020).setDepth(tld + 2);
+      const tlg = this.add.graphics().setDepth(tld + 3);
+      const isRed = ((tlx >> 1) + tly) % 3 !== 0;
+      tlg.fillStyle(isRed ? 0xff2222 : 0x441111); tlg.fillCircle(tlx + 16, tly - 10, 3);
+      tlg.fillStyle(0x443300);                     tlg.fillCircle(tlx + 16, tly - 4,  3);
+      tlg.fillStyle(isRed ? 0x114411 : 0x22ff44);  tlg.fillCircle(tlx + 16, tly + 2,  3);
+    }
+
+    // ── Driving cars (looping across road lanes) ──────────────────────────────
+    const carKeys = ['city-car', 'city-car-blue', 'city-car-yellow', 'city-car-green', 'city-car-white'];
+    let ckIdx = 0;
+    const spawnCar = (
+      sx: number, sy: number, ex: number, ey: number,
+      ang: number, spd: number, delayMs: number,
+    ) => {
+      const car = this.add.image(sx, sy, carKeys[ckIdx++ % carKeys.length])
+        .setAngle(ang).setDisplaySize(16, 24).setDepth(sy + 12);
+      const dist = Math.hypot(ex - sx, ey - sy);
+      const dur  = (dist / spd) * 1000;
+      const loop = () => {
+        car.setPosition(sx, sy);
+        this.tweens.add({
+          targets: car, x: ex, y: ey, duration: dur, ease: 'Linear',
+          onUpdate: () => car.setDepth(car.y + 12),
+          onComplete: loop,
+        });
+      };
+      this.time.delayedCall(delayMs, loop);
+    };
+
+    // Left N-S street (x 320–480): southbound x=418, northbound x=352
+    spawnCar(418,  70, 418, 950, 180, 95,    0);
+    spawnCar(418,  70, 418, 950, 180, 90, 4200);
+    spawnCar(352, 950, 352,  70,   0, 88, 1400);
+    spawnCar(352, 950, 352,  70,   0, 93, 5600);
+    // Right N-S street (x 680–900): southbound x=844, northbound x=718
+    spawnCar(844,  70, 844, 950, 180, 100,  700);
+    spawnCar(844,  70, 844, 950, 180,  86, 4900);
+    spawnCar(718, 950, 718,  70,   0,  97, 2500);
+    spawnCar(718, 950, 718,  70,   0,  91, 6300);
+    // Mid E-W crossing (y 380–580): eastbound y=548, westbound y=432
+    spawnCar(  60, 548, 1240, 548,  90, 87,  900);
+    spawnCar(  60, 548, 1240, 548,  90, 94, 5200);
+    spawnCar(1240, 432,   60, 432, -90, 91, 2100);
+    spawnCar(1240, 432,   60, 432, -90, 85, 6700);
+
+    // ── Sidewalk pedestrians ──────────────────────────────────────────────────
+    const drawCityWalker = (wg: Phaser.GameObjects.Graphics, shirt: number, pants: number) => {
+      wg.fillStyle(0x000000, 0.18); wg.fillEllipse(0, 9, 12, 5);
+      wg.fillStyle(pants);          wg.fillRect(-4, 2, 8, 9);
+      wg.fillStyle(shirt);          wg.fillEllipse(0, 0, 11, 12);
+      wg.fillStyle(0xf4c890);       wg.fillCircle(0, -7, 5);
+      wg.fillStyle(0x2a1808);       wg.fillEllipse(0, -10, 9, 4);
+      wg.fillStyle(0x111111);       wg.fillRect(-2, -8, 1, 1); wg.fillRect(2, -8, 1, 1);
+    };
+    const cityWalkLoop = (wg: Phaser.GameObjects.Graphics, pts: { x: number; y: number }[], spd: number) => {
+      let idx = 0;
+      const move = () => {
+        const t = pts[idx++ % pts.length];
+        const d = Math.hypot(t.x - wg.x, t.y - wg.y);
+        this.tweens.add({
+          targets: wg, x: t.x, y: t.y,
+          duration: Math.max(80, (d / spd) * 1000), ease: 'Linear',
+          onUpdate: () => wg.setDepth(wg.y + 8),
+          onComplete: move,
+        });
+      };
+      move();
+    };
+
+    // Walker 1 — north sidewalk, pacing above building A
+    const cw1 = this.add.graphics(); drawCityWalker(cw1, 0x3355cc, 0x223344);
+    cw1.setPosition(180, 90); cw1.setDepth(98);
+    cityWalkLoop(cw1, [{ x: 88, y: 90 }, { x: 318, y: 90 }, { x: 88, y: 90 }], 38);
+    this.tweens.add({ targets: cw1, scaleX: 1.06, scaleY: 1.06, duration: 360, ease: 'Sine.InOut', yoyo: true, repeat: -1 });
+
+    // Walker 2 — south sidewalk, pacing below building D
+    const cw2 = this.add.graphics(); drawCityWalker(cw2, 0xcc5522, 0x332211);
+    cw2.setPosition(180, 876); cw2.setDepth(884);
+    cityWalkLoop(cw2, [{ x: 88, y: 876 }, { x: 318, y: 876 }, { x: 88, y: 876 }], 42);
+    this.tweens.add({ targets: cw2, scaleX: 1.06, scaleY: 1.06, duration: 350, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 90 });
+
+    // Walker 3 — east sidewalk beside building C
+    const cw3 = this.add.graphics(); drawCityWalker(cw3, 0x44aa44, 0x224422);
+    cw3.setPosition(1158, 200); cw3.setDepth(208);
+    cityWalkLoop(cw3, [{ x: 1158, y: 130 }, { x: 1158, y: 368 }, { x: 1158, y: 130 }], 36);
+    this.tweens.add({ targets: cw3, scaleX: 1.06, scaleY: 1.06, duration: 370, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 140 });
+
+    // Walker 4 — mid E-W corridor between building rows
+    const cw4 = this.add.graphics(); drawCityWalker(cw4, 0xaa4488, 0x332233);
+    cw4.setPosition(560, 457); cw4.setDepth(465);
+    cityWalkLoop(cw4, [
+      { x: 492, y: 457 }, { x: 668, y: 457 }, { x: 668, y: 538 }, { x: 492, y: 538 }, { x: 492, y: 457 },
+    ], 40);
+    this.tweens.add({ targets: cw4, scaleX: 1.06, scaleY: 1.06, duration: 345, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 200 });
+
+    // ── Rooftop steam vents (periodic particles) ──────────────────────────────
+    const ventPts: [number, number][] = [
+      [200, 120], [560, 120], [1020, 120],
+      [200, 580], [560, 580], [1020, 580],
+    ];
+    const spawnSteam = (vx: number, vy: number) => {
+      const sg = this.add.graphics();
+      sg.fillStyle(0xbbbbbb, 0.55 + Math.random() * 0.35);
+      sg.fillCircle(0, 0, 2 + Math.random() * 3);
+      sg.setPosition(vx + (Math.random() - 0.5) * 10, vy);
+      sg.setDepth(vy - 10);
+      this.tweens.add({
+        targets: sg,
+        y: vy - 44 - Math.random() * 24,
+        alpha: 0,
+        scaleX: 2 + Math.random(),
+        scaleY: 2 + Math.random(),
+        duration: 2200 + Math.random() * 1400,
+        ease: 'Quad.In',
+        onComplete: () => sg.destroy(),
+      });
+    };
+    this.time.addEvent({
+      delay: 1100, loop: true,
+      callback: () => {
+        const [vx, vy] = ventPts[Math.floor(Math.random() * ventPts.length)];
+        spawnSteam(vx, vy);
+      },
+    });
+
+    // ── Night atmosphere tint (darkens ground/road layer; below buildings+chars) ─
+    // Depth 0.5: above tilemap (0) and below road markings (0.6+), so only the
+    // bare pavement is darkened. Streetlight glow pools at depth 0.66 remain lit.
+    this.add.rectangle(
+      this.cfg.worldWidth / 2, this.cfg.worldHeight / 2,
+      this.cfg.worldWidth, this.cfg.worldHeight,
+      0x08101e,
+    ).setAlpha(0.32).setDepth(0.5);
+
+    // ── More sidewalk pedestrians ─────────────────────────────────────────────
+    // Reuse drawCityWalker / cityWalkLoop defined above in this same call chain.
+    // Walker 5 — north sidewalk above building B
+    const cw5 = this.add.graphics(); drawCityWalker(cw5, 0xdd8822, 0x443311);
+    cw5.setPosition(580, 92); cw5.setDepth(100);
+    cityWalkLoop(cw5, [{ x: 492, y: 92 }, { x: 678, y: 92 }, { x: 492, y: 92 }], 36);
+    this.tweens.add({ targets: cw5, scaleX: 1.06, scaleY: 1.06, duration: 355, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 60 });
+
+    // Walker 6 — north sidewalk above building C
+    const cw6 = this.add.graphics(); drawCityWalker(cw6, 0x22aacc, 0x112233);
+    cw6.setPosition(1020, 92); cw6.setDepth(100);
+    cityWalkLoop(cw6, [{ x: 902, y: 92 }, { x: 1138, y: 92 }, { x: 902, y: 92 }], 40);
+    this.tweens.add({ targets: cw6, scaleX: 1.06, scaleY: 1.06, duration: 368, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 170 });
+
+    // Walker 7 — south sidewalk below building E
+    const cw7 = this.add.graphics(); drawCityWalker(cw7, 0xcc3388, 0x332233);
+    cw7.setPosition(580, 874); cw7.setDepth(882);
+    cityWalkLoop(cw7, [{ x: 492, y: 874 }, { x: 678, y: 874 }, { x: 492, y: 874 }], 39);
+    this.tweens.add({ targets: cw7, scaleX: 1.06, scaleY: 1.06, duration: 342, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 110 });
+
+    // Walker 8 — south sidewalk below building F
+    const cw8 = this.add.graphics(); drawCityWalker(cw8, 0x88cc44, 0x223311);
+    cw8.setPosition(1020, 874); cw8.setDepth(882);
+    cityWalkLoop(cw8, [{ x: 902, y: 874 }, { x: 1138, y: 874 }, { x: 902, y: 874 }], 37);
+    this.tweens.add({ targets: cw8, scaleX: 1.06, scaleY: 1.06, duration: 375, ease: 'Sine.InOut', yoyo: true, repeat: -1, delay: 220 });
   }
 
   // ── Collision wiring ────────────────────────────────────────────────────────
@@ -2734,6 +3102,16 @@ export class GameScene extends Phaser.Scene {
         this.enemy2!.stun();
       });
       this.physics.add.overlap(this.player.sprite, this.enemy2.sprite, () => this.triggerLose());
+    }
+
+    if (this.enemy3) {
+      this.physics.add.collider(this.enemy3.sprite, this.wallGroup);
+      this.physics.add.collider(this.enemy3.sprite, this.furnitureGroup);
+      this.physics.add.overlap(this.enemy3.sprite, this.player.poops, (_e, poopObj) => {
+        (poopObj as Phaser.Physics.Arcade.Image).destroy();
+        this.enemy3!.stun();
+      });
+      this.physics.add.overlap(this.player.sprite, this.enemy3.sprite, () => this.triggerLose());
     }
 
     // Pink treat: collect to spawn Axol helper
@@ -2791,7 +3169,8 @@ export class GameScene extends Phaser.Scene {
     this.player.sprite.setVelocity(0, 0);
     this.audioManager?.stop();
     if (this.levelNum >= LEVELS.length) {
-      this.ui.showWin(this);
+      // All levels complete — roll credits
+      this.time.delayedCall(800, () => this.scene.start('CreditsScene'));
     } else {
       this.time.delayedCall(400, () =>
         this.scene.start('TransitionScene', { completedLevel: this.levelNum }),
@@ -2897,6 +3276,9 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.enemy.sprite, axol.sprite, catchAxol);
     if (this.enemy2) {
       this.physics.add.overlap(this.enemy2.sprite, axol.sprite, catchAxol);
+    }
+    if (this.enemy3) {
+      this.physics.add.overlap(this.enemy3.sprite, axol.sprite, catchAxol);
     }
   }
 

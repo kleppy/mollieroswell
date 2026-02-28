@@ -70,10 +70,129 @@
         0%   { background-position: 250% center; }
         100% { background-position:   0% center; }
       }
+
+      /* ── Game area: level menu + canvas side by side ──────────── */
+      #game-area {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      /* ── Level select menu ────────────────────────────────────── */
+      #level-menu {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        padding: 12px 10px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 215, 0, 0.2);
+        border-radius: 10px;
+        min-width: 118px;
+      }
+
+      #level-menu .menu-title {
+        font-family: 'Trebuchet MS', Arial, sans-serif;
+        font-size: 0.72rem;
+        font-weight: bold;
+        color: #ffd700;
+        text-align: center;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-bottom: 3px;
+        user-select: none;
+      }
+
+      #level-menu button {
+        font-family: 'Trebuchet MS', Arial, sans-serif;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #d8d8d8;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+        padding: 7px 10px;
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+        transition: background 0.14s, color 0.14s, border-color 0.14s;
+      }
+
+      #level-menu button:hover {
+        background: rgba(255, 215, 0, 0.16);
+        color: #ffd700;
+        border-color: rgba(255, 215, 0, 0.4);
+      }
+
+      #level-menu button:active {
+        background: rgba(255, 215, 0, 0.28);
+      }
+
+      .menu-sep {
+        border: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        width: 100%;
+        margin: 3px 0;
+      }
+
+      #level-menu .credits-btn {
+        color: #aaaacc;
+        font-size: 0.78rem;
+      }
     </style>
   </head>
   <body>
     <h1 class="game-title">Mollie vs Roswell: Treat Heist</h1>
+
+    <div id="game-area">
+      <nav id="level-menu">
+        <div class="menu-title">Jump to Level</div>
+        <button onclick="selectLevel(1)">1 · House</button>
+        <button onclick="selectLevel(2)">2 · Water Park</button>
+        <button onclick="selectLevel(3)">3 · Park</button>
+        <button onclick="selectLevel(4)">4 · City</button>
+        <hr class="menu-sep">
+        <button onclick="selectCredits()" class="credits-btn">✦ Credits</button>
+      </nav>
+      <div id="game-canvas"></div>
+    </div>
+
+    <script>
+      function selectCredits() {
+        const game = window.__phaserGame;
+        if (!game) return;
+        try {
+          const ctx = game.sound.context;
+          if (ctx && ctx.state === 'suspended') ctx.resume();
+        } catch (e) {}
+        ['TitleScene', 'TransitionScene', 'GameScene'].forEach(function(k) {
+          try { if (game.scene.isActive(k)) game.scene.stop(k); } catch (e) {}
+        });
+        if (!game.scene.isActive('CreditsScene')) {
+          game.scene.start('CreditsScene');
+        }
+      }
+
+      function selectLevel(n) {
+        const game = window.__phaserGame;
+        if (!game) return;
+        // Resume AudioContext if suspended — satisfies browser autoplay policy.
+        try {
+          const ctx = game.sound.context;
+          if (ctx && ctx.state === 'suspended') ctx.resume();
+        } catch (e) {}
+        // Stop any blocking scenes, then restart / start GameScene at chosen level.
+        ['TitleScene', 'TransitionScene'].forEach(function(k) {
+          try { if (game.scene.isActive(k)) game.scene.stop(k); } catch (e) {}
+        });
+        const gs = game.scene.getScene('GameScene');
+        if (gs && game.scene.isActive('GameScene')) {
+          gs.scene.restart({ level: n });
+        } else {
+          game.scene.start('GameScene', { level: n });
+        }
+      }
+    </script>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
