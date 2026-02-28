@@ -1,6 +1,6 @@
 # Mollie vs. Roswell: Treat Heist
 
-![Mollie](public/assets/mollie.jpg)
+![Mollie](public/assets/playscreen.png)
 
 A top-down stealth game built with **TypeScript 5.6 + Vite 6 + Phaser 3.87**.
 
