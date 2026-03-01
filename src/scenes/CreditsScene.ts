@@ -85,7 +85,7 @@ export class CreditsScene extends Phaser.Scene {
     addLine('─ ─ ─ ─ ─ ─ ─ ─', divSt, 44);
 
     addLine('Developed by', headerSt, 6);
-    addLine('Daddy And Julianna', valueSt, 52);
+    addLine('Jon And Julianna', valueSt, 52);
 
     addLine('Music by', headerSt, 6);
     addLine('Freesound.org', valueSt, 52);
@@ -115,7 +115,7 @@ export class CreditsScene extends Phaser.Scene {
           stroke: '#000000', strokeThickness: 5, fontStyle: 'bold',
         }).setOrigin(0.5).setDepth(12);
 
-        this.add.text(w / 2, h / 2 + 28, '♥  from Daddy & Julianna  ♥', {
+        this.add.text(w / 2, h / 2 + 28, '♥  from Jon & Julianna  ♥', {
           fontSize: '20px', color: '#ff8888',
           stroke: '#000000', strokeThickness: 3,
         }).setOrigin(0.5).setDepth(12);

@@ -82,7 +82,7 @@ Reached automatically after beating Level 4, or via the **✦ Credits** button i
 
 **Exact credits text:**
 ```
-Developed by : Daddy And Julianna
+Developed by : Jon And Julianna
 Music by: Freesound.org
 github.com/kleppy/mollieroswell
 ```
