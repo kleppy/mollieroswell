@@ -26,8 +26,8 @@ export class GameScene extends Phaser.Scene {
   private levelNum = 1;
   private cfg!: LevelConfig;
   private audioManager!: AudioManager;
-  /** ms until next bark; initialised on level start. */
-  private barkTimer = 0;
+  /** Absolute scene-time (ms) before which Roswell may not bark. */
+  private nextBarkAtMs = 0;
   private bgMusic: Phaser.Sound.BaseSound | null = null;
   private barkSound: Phaser.Sound.BaseSound | null = null;
 
@@ -159,8 +159,8 @@ export class GameScene extends Phaser.Scene {
       return muted;
     });
 
-    // Initial bark offset so Roswell doesn't bark the instant a level starts.
-    this.barkTimer = 5000 + Math.random() * 3000;
+    // Hold the first bark for 8–12 s after level load.
+    this.nextBarkAtMs = this.time.now + 8000 + Math.random() * 4000;
 
     // Stop audio when the scene shuts down (restart or transition).
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -214,17 +214,17 @@ export class GameScene extends Phaser.Scene {
     this.ui.update(this.player.getTreatCount(), this.player.getPoopCharges());
 
     if (this.audioManager) {
-      this.updateBark(delta);
+      this.updateBark();
       const vel = this.player.sprite.body.velocity;
       this.audioManager.updatePant(Math.hypot(vel.x, vel.y) > 10, delta);
     }
   }
 
-  private updateBark(delta: number): void {
-    this.barkTimer -= delta;
-    if (this.barkTimer > 0) return;
+  private updateBark(): void {
+    const now = this.time.now;
+    if (now < this.nextBarkAtMs) return;
 
-    // Use the closer enemy for volume; use whichever is chasing for interval.
+    // Closest enemy: dist for volume, CHASE takes priority for state.
     const dx1 = this.enemy.sprite.x - this.player.sprite.x;
     const dy1 = this.enemy.sprite.y - this.player.sprite.y;
     let dist = Math.sqrt(dx1 * dx1 + dy1 * dy1);
@@ -243,10 +243,23 @@ export class GameScene extends Phaser.Scene {
       if (dist3 < dist) { dist = dist3; }
       if (this.enemy3.getState() === 'CHASE') { state = 'CHASE'; }
     }
-    // Play bark WAV (distance-attenuated); isPlaying guard prevents overlap.
+
+    // Never bark while stunned; push cooldown and bail.
+    if (state === 'STUNNED') {
+      this.nextBarkAtMs = now + 15000 + Math.random() * 5000;
+      return;
+    }
+
+    // During patrol only bark if Mollie is within earshot (keeps it rare).
+    if (state === 'PATROL' && dist > 380) {
+      this.nextBarkAtMs = now + 4000;   // re-check in 4 s, not every frame
+      return;
+    }
+
+    // Play bark — single pre-created instance, skipped if still playing.
     if (this.barkSound) {
       const maxDist = 500;
-      const vol = (1 - Math.min(dist / maxDist, 1) * 0.85) * 0.55;
+      const vol = (1 - Math.min(dist / maxDist, 1) * 0.85) * 0.45;
       if (vol > 0.002 && !this.barkSound.isPlaying) {
         this.barkSound.play({ volume: vol });
       }
@@ -254,13 +267,11 @@ export class GameScene extends Phaser.Scene {
       this.audioManager.playBark(dist);
     }
 
-    // Bark interval: Chase ≈ 4–6 s, Patrol ≈ 8–11 s, else rare.
-    const interval =
-      state === 'CHASE'   ? 4000 + Math.random() * 2000 :
-      state === 'PATROL'  ? 8000 + Math.random() * 3000 :
-      state === 'SEARCH'  ? 9000 + Math.random() * 3000 :
-      /* STUNNED */        14000 + Math.random() * 4000;
-    this.barkTimer = interval;
+    // Hard cooldown — wall-clock timestamp; no stacking possible.
+    const cooldown =
+      state === 'CHASE'  ? 8000  + Math.random() * 6000 :   // 8–14 s
+      /* PATROL/SEARCH */ 12000  + Math.random() * 8000;     // 12–20 s
+    this.nextBarkAtMs = now + cooldown;
   }
 
   // ── Map construction ────────────────────────────────────────────────────────
