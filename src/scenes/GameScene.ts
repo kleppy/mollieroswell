@@ -29,6 +29,7 @@ export class GameScene extends Phaser.Scene {
   /** ms until next bark; initialised on level start. */
   private barkTimer = 0;
   private bgMusic: Phaser.Sound.BaseSound | null = null;
+  private barkSound: Phaser.Sound.BaseSound | null = null;
 
   // ── Mobile virtual joystick ──────────────────────────────────────────────────
   private joystickVec = { x: 0, y: 0 };
@@ -145,6 +146,11 @@ export class GameScene extends Phaser.Scene {
       this.bgMusic.play();
     }
 
+    // Pre-create a single bark sound instance; reused to prevent overlap.
+    if (this.cache.audio.exists('roswell-bark')) {
+      this.barkSound = this.sound.add('roswell-bark');
+    }
+
     this.ui = new UI(this, this.levelNum, LEVELS.length, this.cfg.totalTreats, () => {
       const muted = this.audioManager?.toggleMute() ?? false;
       this.sound.mute = muted;  // sync Phaser sounds (bark WAV + bg music)
@@ -154,13 +160,15 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Initial bark offset so Roswell doesn't bark the instant a level starts.
-    this.barkTimer = 2000 + Math.random() * 2000;
+    this.barkTimer = 5000 + Math.random() * 3000;
 
     // Stop audio when the scene shuts down (restart or transition).
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.audioManager?.stop();
       this.bgMusic?.destroy();
       this.bgMusic = null;
+      this.barkSound?.destroy();
+      this.barkSound = null;
     });
 
     this.buildJoystick();
@@ -235,21 +243,23 @@ export class GameScene extends Phaser.Scene {
       if (dist3 < dist) { dist = dist3; }
       if (this.enemy3.getState() === 'CHASE') { state = 'CHASE'; }
     }
-    // Play real bark WAV (distance-attenuated); fall back to synth if not loaded.
-    if (this.cache.audio.exists('roswell-bark')) {
+    // Play bark WAV (distance-attenuated); isPlaying guard prevents overlap.
+    if (this.barkSound) {
       const maxDist = 500;
       const vol = (1 - Math.min(dist / maxDist, 1) * 0.85) * 0.55;
-      if (vol > 0.002) this.sound.play('roswell-bark', { volume: vol });
+      if (vol > 0.002 && !this.barkSound.isPlaying) {
+        this.barkSound.play({ volume: vol });
+      }
     } else {
       this.audioManager.playBark(dist);
     }
 
-    // Bark interval: Chase = very frequent, Patrol = occasional, else rare.
+    // Bark interval: Chase ≈ 4–6 s, Patrol ≈ 8–11 s, else rare.
     const interval =
-      state === 'CHASE'   ? 900  + Math.random() * 700  :
-      state === 'PATROL'  ? 3500 + Math.random() * 2000 :
-      state === 'SEARCH'  ? 4000 + Math.random() * 2000 :
-      /* STUNNED */         7000 + Math.random() * 3000;
+      state === 'CHASE'   ? 4000 + Math.random() * 2000 :
+      state === 'PATROL'  ? 8000 + Math.random() * 3000 :
+      state === 'SEARCH'  ? 9000 + Math.random() * 3000 :
+      /* STUNNED */        14000 + Math.random() * 4000;
     this.barkTimer = interval;
   }
 
